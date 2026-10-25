@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.sinarahmany.Freequence</id>
+  <id>io.github.sinarahmany.Freequence-desktop</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>Freequence</name>
@@ -21,12 +21,22 @@
     </ul>
   </description>
 
+  <launchable type="desktop-id">io.github.sinarahmany.Freequence-desktop.desktop</launchable>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/sinarahmany/Freequence-desktop/main/screenshots/main-window.png</image>
+      <caption>Freequence music player main library and player view</caption>
+    </screenshot>
+  </screenshots>
+
   <developer id="io.github.sinarahmany">
     <name>Sina Rahmannejad</name>
   </developer>
 
   <url type="homepage">https://github.com/sinarahmany/Freequence-desktop</url>
   <url type="bugtracker">https://github.com/sinarahmany/Freequence-desktop/issues</url>
+  <url type="vcs-browser">https://github.com/sinarahmany/Freequence-desktop</url>
 
   <content_rating type="oars-1.1" />
 

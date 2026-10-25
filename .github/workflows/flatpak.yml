@@ -12,7 +12,7 @@ jobs:
     name: Build Flatpak
     runs-on: ubuntu-latest
     container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
 
     steps:
@@ -23,7 +23,7 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           bundle: Freequence.flatpak
-          manifest-path: io.github.sinarahmany.Freequence.yml
+          manifest-path: io.github.sinarahmany.Freequence-desktop.yml
           run-tests: false
           cache: false
 

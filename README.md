@@ -8,7 +8,7 @@ A modern, fast self-hosted music player and streaming desktop client built with 
 - **Embedded SQLite**: Embedded [rusqlite](https://crates.io/crates/rusqlite) database with WAL mode storing tracks, albums, artists, playlists, play counts, and ratings.
 - **Dual Capability**: Runs as a standalone desktop music player and simultaneously hosts an embedded [Axum](https://crates.io/crates/axum) REST & Subsonic API on `127.0.0.1:4533` for mobile clients (Symfonium, DSub, Amperfy).
 - **Embedded Web Player**: Reuses the responsive React 19 / Vite / Tailwind UI with dark mode, queue management, and seekable streaming.
-- **Universal Linux Compatibility**: Native Flatpak sandbox (`io.github.sinarahmany.Freequence`) with PipeWire/PulseAudio integration and XDG directory standards.
+- **Universal Linux Compatibility**: Native Flatpak sandbox (`io.github.sinarahmany.Freequence-desktop`) with PipeWire/PulseAudio integration and XDG directory standards.
 
 ---
 
@@ -55,6 +55,6 @@ cargo build --release --manifest-path src-tauri/Cargo.toml
 Build and install locally using `flatpak-builder`:
 
 ```bash
-flatpak-builder --user --install --force-clean build-dir io.github.sinarahmany.Freequence.yml
-flatpak run io.github.sinarahmany.Freequence
+flatpak-builder --user --install --force-clean build-dir io.github.sinarahmany.Freequence-desktop.yml
+flatpak run io.github.sinarahmany.Freequence-desktop
 ```

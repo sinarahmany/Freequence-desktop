@@ -848,6 +848,62 @@ mod tests {
             .unwrap();
         let resp = router.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        // 8. Scan music and test real track streaming with Range header (seek test)
+        let _ = scanner.scan_directories(vec![("Music".to_string(), PathBuf::from("../music"), true)]);
+
+        let req = Request::builder()
+            .uri("/api/v1/tracks")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let tracks = json["tracks"].as_array().unwrap();
+        assert!(!tracks.is_empty(), "Should have scanned tracks");
+        let first_track_id = tracks[0]["id"].as_str().unwrap();
+
+        // 9. Stream with byte Range request: bytes=0-1023
+        let req = Request::builder()
+            .uri(&format!("/api/v1/stream/{}", first_track_id))
+            .method("GET")
+            .header("Range", "bytes=0-1023")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(resp.headers().get("Content-Range").unwrap(), &format!("bytes 0-1023/{}", tracks[0]["size"]));
+        assert_eq!(resp.headers().get("Content-Length").unwrap(), "1024");
+
+        // 10. Queue save & restore test
+        let req = Request::builder()
+            .uri("/api/v1/queue")
+            .method("PUT")
+            .header("Content-Type", "application/json")
+            .header("Cookie", "session=admin")
+            .body(Body::from(serde_json::to_string(&serde_json::json!({
+                "trackIds": [first_track_id],
+                "current": first_track_id,
+                "position": 42.5
+            })).unwrap()))
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        let req = Request::builder()
+            .uri("/api/v1/queue")
+            .method("GET")
+            .header("Cookie", "session=admin")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let q_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let q_json: serde_json::Value = serde_json::from_slice(&q_bytes).unwrap();
+        assert_eq!(q_json["position"], 42.5);
     }
 }
 
