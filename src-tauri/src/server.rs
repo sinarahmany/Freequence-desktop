@@ -96,6 +96,22 @@ pub struct CreatePlaylistPayload {
     pub track_ids: Vec<String>,
 }
 
+#[derive(Deserialize)]
+pub struct UpdatePlaylistPayload {
+    pub name: Option<String>,
+    #[serde(rename = "addTrackIds")]
+    pub add_track_ids: Option<Vec<String>>,
+    #[serde(rename = "removeIndexes")]
+    pub remove_indexes: Option<Vec<usize>>,
+    #[serde(rename = "trackIds")]
+    pub track_ids: Option<Vec<String>>,
+}
+
+#[derive(Deserialize)]
+pub struct BrowseQuery {
+    pub path: Option<String>,
+}
+
 pub fn create_router(state: AppState) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -115,6 +131,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/artists", get(get_artists))
         .route("/api/v1/artists/{id}", get(get_artist_by_id))
         .route("/api/v1/tracks", get(get_tracks))
+        .route("/api/v1/tracks/{id}/lyrics", get(get_track_lyrics))
         .route("/api/v1/genres", get(get_genres))
         .route("/api/v1/search", get(get_search))
         .route("/api/v1/starred", get(get_starred))
@@ -126,9 +143,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/v1/queue", get(get_queue).put(put_queue))
         // Playlists
         .route("/api/v1/playlists", get(get_playlists).post(post_playlist))
-        // Folders & Scanner
+        .route("/api/v1/playlists/{id}", get(get_playlist_by_id).patch(patch_playlist).delete(delete_playlist))
+        // Folders, Browse & Scanner
         .route("/api/v1/folders", get(get_folders).post(post_folder))
         .route("/api/v1/folders/{id}", delete(delete_folder))
+        .route("/api/v1/browse", get(browse_filesystem))
         .route("/api/v1/scan/status", get(get_scan_status))
         .route("/api/v1/scan", post(post_scan))
         // Media Streaming & Covers
@@ -395,6 +414,102 @@ async fn post_playlist(
     }
 }
 
+async fn get_playlist_by_id(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+) -> impl IntoResponse {
+    let user_id = extract_user_id(&headers, &state);
+    if let Ok(Some((playlist, tracks))) = state.db.get_playlist(&id, &user_id) {
+        Json(serde_json::json!({
+            "playlist": playlist,
+            "tracks": tracks,
+        })).into_response()
+    } else {
+        StatusCode::NOT_FOUND.into_response()
+    }
+}
+
+async fn patch_playlist(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+    Json(payload): Json<UpdatePlaylistPayload>,
+) -> impl IntoResponse {
+    let user_id = extract_user_id(&headers, &state);
+    let _ = state.db.update_playlist(
+        &id,
+        &user_id,
+        payload.name,
+        payload.add_track_ids,
+        payload.remove_indexes,
+        payload.track_ids,
+    );
+    StatusCode::NO_CONTENT
+}
+
+async fn delete_playlist(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+) -> impl IntoResponse {
+    let user_id = extract_user_id(&headers, &state);
+    let _ = state.db.delete_playlist(&id, &user_id);
+    StatusCode::NO_CONTENT
+}
+
+// Handler: Lyrics
+async fn get_track_lyrics(
+    State(state): State<AppState>,
+    AxPath(id): AxPath<String>,
+) -> impl IntoResponse {
+    if let Ok(Some((path_str, _))) = state.db.get_track_path(&id) {
+        let path = PathBuf::from(&path_str);
+        let lrc_path = path.with_extension("lrc");
+        if lrc_path.exists() {
+            if let Ok(content) = tokio::fs::read_to_string(&lrc_path).await {
+                let lines = parse_lrc(&content);
+                return Json(Lyrics {
+                    synced: !lines.is_empty(),
+                    instrumental: false,
+                    source: Some("lrc".to_string()),
+                    lines,
+                }).into_response();
+            }
+        }
+    }
+
+    Json(Lyrics {
+        synced: false,
+        instrumental: false,
+        source: None,
+        lines: vec![],
+    }).into_response()
+}
+
+fn parse_lrc(content: &str) -> Vec<LyricLine> {
+    let mut lines = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            if let Some(close_idx) = trimmed.find(']') {
+                let time_part = &trimmed[1..close_idx];
+                let text = trimmed[close_idx + 1..].trim().to_string();
+                let mut parts = time_part.split(':');
+                if let (Some(m_str), Some(s_str)) = (parts.next(), parts.next()) {
+                    if let (Ok(m), Ok(s)) = (m_str.parse::<f64>(), s_str.parse::<f64>()) {
+                        lines.push(LyricLine {
+                            at: Some(m * 60.0 + s),
+                            text,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    lines
+}
+
 // Handler: Folders
 async fn get_folders(State(state): State<AppState>) -> impl IntoResponse {
     let mut folders = state.db.get_folders().unwrap_or_default();
@@ -406,6 +521,45 @@ async fn get_folders(State(state): State<AppState>) -> impl IntoResponse {
         builtin: true,
     });
     Json(serde_json::json!({ "folders": folders, "canBrowse": true }))
+}
+
+// Handler: Browse Filesystem
+async fn browse_filesystem(Query(params): Query<BrowseQuery>) -> impl IntoResponse {
+    let target_path = match params.path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => PathBuf::from(p),
+        None => dirs::audio_dir()
+            .or_else(|| dirs::home_dir())
+            .unwrap_or_else(|| PathBuf::from("/")),
+    };
+
+    let label = target_path.to_string_lossy().to_string();
+    let parent = target_path.parent().map(|p| p.to_string_lossy().to_string());
+
+    let mut entries = Vec::new();
+    if let Ok(read_dir) = std::fs::read_dir(&target_path) {
+        for entry in read_dir.filter_map(|e| e.ok()) {
+            let p = entry.path();
+            if p.is_dir() {
+                let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
+                if !name.starts_with('.') {
+                    entries.push(BrowseEntry {
+                        name: name.clone(),
+                        path: p.to_string_lossy().to_string(),
+                        label: name,
+                    });
+                }
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Json(BrowseResult {
+        path: target_path.to_string_lossy().to_string(),
+        label,
+        parent,
+        can_add: true,
+        entries,
+    })
 }
 
 #[derive(Deserialize)]
@@ -422,7 +576,15 @@ async fn post_folder(State(state): State<AppState>, Json(payload): Json<AddFolde
         .to_string();
 
     match state.db.add_folder(&id, &name, &payload.path) {
-        Ok(folder) => Json(folder).into_response(),
+        Ok(folder) => {
+            let scanner = state.scanner.clone();
+            let p = PathBuf::from(&payload.path);
+            let n = name.clone();
+            tokio::spawn(async move {
+                let _ = scanner.scan_directories(vec![(n, p, false)]);
+            });
+            Json(folder).into_response()
+        }
         Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
     }
 }
@@ -629,6 +791,63 @@ mod tests {
             .unwrap();
         let resp = router.clone().oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+
+        // 5. Browse endpoint
+        let req = Request::builder()
+            .uri("/api/v1/browse")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 6. Lyrics endpoint
+        let req = Request::builder()
+            .uri("/api/v1/tracks/dummy-id/lyrics")
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 7. Playlist lifecycle (create, get, patch, delete)
+        let req = Request::builder()
+            .uri("/api/v1/playlists")
+            .method("POST")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"My Favorites","trackIds":[]}"#))
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let playlist_id = json["playlist"]["id"].as_str().unwrap();
+
+        let req = Request::builder()
+            .uri(&format!("/api/v1/playlists/{}", playlist_id))
+            .method("GET")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let req = Request::builder()
+            .uri(&format!("/api/v1/playlists/{}", playlist_id))
+            .method("PATCH")
+            .header("Content-Type", "application/json")
+            .body(Body::from(r#"{"name":"Updated Favorites"}"#))
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+        let req = Request::builder()
+            .uri(&format!("/api/v1/playlists/{}", playlist_id))
+            .method("DELETE")
+            .body(Body::empty())
+            .unwrap();
+        let resp = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     }
 }
 

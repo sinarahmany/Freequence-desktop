@@ -968,6 +968,170 @@ impl Db {
         })
     }
 
+    pub fn get_playlist(&self, id: &str, user_id: &str) -> Result<Option<(Playlist, Vec<Track>)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, comment, owner_id, owner, public, song_count, duration, has_cover, created_at, updated_at
+             FROM playlists WHERE id = ?1 AND (owner_id = ?2 OR public = 1)"
+        )?;
+
+        let playlist = stmt.query_row(params![id, user_id], |row| {
+            let pid: String = row.get(0)?;
+            let has_cover: bool = row.get::<_, i32>(8)? != 0;
+            Ok(Playlist {
+                id: pid.clone(),
+                name: row.get(1)?,
+                comment: row.get(2)?,
+                owner_id: row.get(3)?,
+                owner: row.get(4)?,
+                public: row.get::<_, i32>(5)? != 0,
+                song_count: row.get(6)?,
+                duration: row.get(7)?,
+                has_cover,
+                cover_art: if has_cover { Some(pid) } else { None },
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        }).optional()?;
+
+        if let Some(pl) = playlist {
+            let mut tstmt = conn.prepare(
+                "SELECT t.id, t.title, t.album_id, t.album, t.artist_id, t.artist, t.album_artist,
+                        t.track_number, t.disc_number, t.year, t.genre, t.duration, t.bit_rate,
+                        t.sample_rate, t.channels, t.suffix, t.content_type, t.size, t.has_cover_art,
+                        t.created_at,
+                        COALESCE(a.starred, 0), COALESCE(a.rating, 0), COALESCE(a.play_count, 0)
+                 FROM playlist_entries pe
+                 JOIN tracks t ON t.id = pe.track_id
+                 LEFT JOIN annotations a ON a.item_id = t.id AND a.user_id = ?2 AND a.item_type = 'track'
+                 WHERE pe.playlist_id = ?1
+                 ORDER BY pe.position ASC"
+            )?;
+
+            let tracks = tstmt.query_map(params![id, user_id], |row| {
+                let track_id: String = row.get(0)?;
+                let has_cover: bool = row.get::<_, i32>(18)? != 0;
+                Ok(Track {
+                    id: track_id.clone(),
+                    title: row.get(1)?,
+                    album_id: row.get(2)?,
+                    album: row.get(3)?,
+                    artist_id: row.get(4)?,
+                    artist: row.get(5)?,
+                    album_artist: row.get(6)?,
+                    track_number: row.get(7)?,
+                    disc_number: row.get(8)?,
+                    year: row.get(9)?,
+                    genre: row.get(10)?,
+                    duration: row.get(11)?,
+                    bit_rate: row.get(12)?,
+                    sample_rate: row.get(13)?,
+                    channels: row.get(14)?,
+                    suffix: row.get(15)?,
+                    content_type: row.get(16)?,
+                    size: row.get(17)?,
+                    has_cover_art: has_cover,
+                    created_at: row.get(19)?,
+                    starred: row.get::<_, i32>(20)? != 0,
+                    rating: row.get(21)?,
+                    play_count: row.get(22)?,
+                    cover_art: if has_cover { Some(track_id.clone()) } else { None },
+                    stream_url: format!("/api/v1/stream/{}", track_id),
+                })
+            })?.filter_map(|r| r.ok()).collect();
+
+            Ok(Some((pl, tracks)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn update_playlist(
+        &self,
+        id: &str,
+        user_id: &str,
+        name: Option<String>,
+        add_track_ids: Option<Vec<String>>,
+        remove_indexes: Option<Vec<usize>>,
+        replace_track_ids: Option<Vec<String>>,
+    ) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let now = Utc::now().to_rfc3339();
+        let tx = conn.transaction()?;
+
+        if let Some(n) = name {
+            tx.execute(
+                "UPDATE playlists SET name = ?1, updated_at = ?2 WHERE id = ?3 AND (owner_id = ?4 OR public = 1)",
+                params![n, now, id, user_id],
+            )?;
+        }
+
+        if let Some(replace_ids) = replace_track_ids {
+            tx.execute("DELETE FROM playlist_entries WHERE playlist_id = ?1", params![id])?;
+            for (pos, tid) in replace_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_entries (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                    params![id, tid, pos as i32],
+                )?;
+            }
+        } else if let Some(add_ids) = add_track_ids {
+            let current_count: i32 = tx.query_row(
+                "SELECT COALESCE(MAX(position) + 1, 0) FROM playlist_entries WHERE playlist_id = ?1",
+                params![id],
+                |r| r.get(0),
+            ).unwrap_or(0);
+
+            for (idx, tid) in add_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_entries (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                    params![id, tid, current_count + idx as i32],
+                )?;
+            }
+        } else if let Some(remove_idxs) = remove_indexes {
+            // Load current entries, filter, re-index
+            let mut stmt = tx.prepare("SELECT id, track_id FROM playlist_entries WHERE playlist_id = ?1 ORDER BY position ASC")?;
+            let entries: Vec<(i64, String)> = stmt.query_map(params![id], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .filter_map(|r| r.ok())
+                .collect();
+            drop(stmt);
+
+            let remove_set: std::collections::HashSet<usize> = remove_idxs.into_iter().collect();
+            let remaining: Vec<String> = entries.into_iter().enumerate()
+                .filter(|(idx, _)| !remove_set.contains(idx))
+                .map(|(_, (_, tid))| tid)
+                .collect();
+
+            tx.execute("DELETE FROM playlist_entries WHERE playlist_id = ?1", params![id])?;
+            for (pos, tid) in remaining.iter().enumerate() {
+                tx.execute(
+                    "INSERT INTO playlist_entries (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                    params![id, tid, pos as i32],
+                )?;
+            }
+        }
+
+        tx.execute(
+            "UPDATE playlists SET
+             song_count = (SELECT COUNT(*) FROM playlist_entries WHERE playlist_id = ?1),
+             duration = (SELECT COALESCE(SUM(t.duration), 0.0) FROM playlist_entries pe JOIN tracks t ON t.id = pe.track_id WHERE pe.playlist_id = ?1),
+             updated_at = ?2
+             WHERE id = ?1",
+            params![id, now],
+        )?;
+
+        tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delete_playlist(&self, id: &str, user_id: &str) -> Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM playlist_entries WHERE playlist_id = ?1", params![id])?;
+        tx.execute("DELETE FROM playlists WHERE id = ?1 AND owner_id = ?2", params![id, user_id])?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn raw_conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().unwrap()
     }
