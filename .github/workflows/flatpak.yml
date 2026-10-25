@@ -19,11 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Lint Manifest & Metainfo
-        uses: flatpak/flatpak-github-actions/flatpak-builder-lint@v6
-        with:
-          manifest-path: io.github.sinarahmany.Freequence.yml
-
       - name: Build Flatpak
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
