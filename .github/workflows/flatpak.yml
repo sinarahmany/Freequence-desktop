@@ -1,0 +1,39 @@
+name: Flatpak Build & Flathub Check
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  flatpak:
+    name: Build Flatpak
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install flatpak-builder & appstream
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder appstream
+
+      - name: Validate AppStream Metainfo
+        run: |
+          appstreamcli validate io.github.sinarahmany.Freequence.metainfo.xml --no-net || true
+
+      - name: Build Flatpak using Flathub action
+        uses: flathub/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Freequence.flatpak
+          manifest-path: io.github.sinarahmany.Freequence.yml
+          run-tests: false
+
+      - name: Upload Flatpak bundle artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Freequence-flatpak
+          path: Freequence.flatpak

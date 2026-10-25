@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Freequence
+GenericName=Music Player
+Comment=Modern self-hosted music player and streaming desktop client
+Exec=freequence
+Icon=io.github.sinarahmany.Freequence
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;
+Keywords=Music;Player;Streaming;Subsonic;Audio;
+StartupWMClass=freequence
+MimeType=audio/mpeg;audio/flac;audio/ogg;audio/mp4;audio/wav;

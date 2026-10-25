@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 is configured in CSS rather than a JS config file. Naming a colour
+   here is what generates the corresponding utilities, so --color-surface gives
+   bg-surface, text-surface, border-surface and so on.
+
+   The palette is dark only: this is a music player meant to sit in the background,
+   and a light theme is not a goal. */
+@theme {
+  --color-base: #08080a;
+  --color-surface: #0f0f12;
+  --color-elevated: #15151a;
+  --color-hover: #1c1c24;
+  --color-line: #262633;
+  --color-fg: #f4f4f5;
+  --color-muted: #a1a1aa;
+  --color-accent: #10b981;
+  --color-accent-hover: #34d399;
+
+  --font-sans: 'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  /* Mobile browsers report 100% against the viewport including the collapsible
+     address bar, which pushes the player bar off screen. dvh tracks the bar as it
+     hides and shows. */
+  #root {
+    height: 100dvh;
+  }
+
+  body {
+    background-color: var(--color-base);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    /* The player bar is fixed at the bottom; nothing outside the scroll regions
+       should ever scroll the document itself. */
+    overflow: hidden;
+  }
+
+  /* A slim scrollbar that does not fight the dark theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-hover) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Range inputs are used for the seek and volume sliders. Styling them needs
+   vendor pseudo-elements, which utilities cannot express. */
+@layer components {
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    border-radius: 9999px;
+    background: var(--color-hover);
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 9999px;
+    background: var(--color-fg);
+    /* Hidden until hover, matching the way Spotify's scrubber behaves. */
+    opacity: 0;
+    transition: opacity 120ms ease;
+  }
+
+  .slider:hover::-webkit-slider-thumb,
+  .slider:focus-visible::-webkit-slider-thumb {
+    opacity: 1;
+  }
+
+  .slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 9999px;
+    background: var(--color-fg);
+  }
+
+  /* On a touch screen there is no hover to reveal the thumb, and a 4px target is
+     not draggable with a finger, so keep it visible and make it bigger. */
+  @media (hover: none) {
+    .slider {
+      height: 6px;
+    }
+
+    .slider::-webkit-slider-thumb {
+      width: 16px;
+      height: 16px;
+      opacity: 1;
+    }
+
+    .slider::-moz-range-thumb {
+      width: 16px;
+      height: 16px;
+    }
+  }
+}

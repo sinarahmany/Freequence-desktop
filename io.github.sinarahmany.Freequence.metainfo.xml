@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sinarahmany.Freequence</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Freequence</name>
+  <summary>Modern self-hosted music player and streaming desktop client</summary>
+
+  <description>
+    <p>
+      Freequence is a modern self-hosted music streaming player and desktop client built in Rust.
+      It scans your local music library, extracts rich metadata and high-resolution album artwork,
+      and provides a fluid, keyboard-reachable interface with dark mode and seek support.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>High-performance audio scanning for MP3, FLAC, OGG, Opus, M4A, and WAV files</li>
+      <li>Embedded SQLite database maintaining play counts, favorites, and playlists</li>
+      <li>Built-in Subsonic / OpenSubsonic API compatibility for mobile apps (Symfonium, DSub, Amperfy)</li>
+      <li>Low memory footprint and fast native desktop performance</li>
+    </ul>
+  </description>
+
+  <developer id="io.github.sinarahmany">
+    <name>Sina Rahmannejad</name>
+  </developer>
+
+  <url type="homepage">https://github.com/sinarahmany/Freequence</url>
+  <url type="bugtracker">https://github.com/sinarahmany/Freequence/issues</url>
+
+  <content_rating type="oars-1.1" />
+
+  <provides>
+    <binary>freequence</binary>
+  </provides>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-25">
+      <description>
+        <p>Initial release of Freequence Linux desktop app built with Rust and Tauri v2.</p>
+      </description>
+    </release>
+  </releases>
+</component>

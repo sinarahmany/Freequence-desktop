@@ -1,0 +1,54 @@
+app-id: io.github.sinarahmany.Freequence
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+command: freequence
+
+finish-args:
+  # Network access for streaming & remote artwork
+  - --share=network
+  - --share=ipc
+  # Wayland and X11 display sockets
+  - --socket=fallback-x11
+  - --socket=wayland
+  # PulseAudio / PipeWire audio output
+  - --socket=pulseaudio
+  # Music library and application data access
+  - --filesystem=xdg-music:ro
+  - --filesystem=xdg-data/freequence:create
+  # Linux desktop media control and notifications
+  - --own-name=org.mpris.MediaPlayer2.freequence
+  - --talk-name=org.freedesktop.Notifications
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+  env:
+    CARGO_HOME: /run/build/freequence/cargo
+
+modules:
+  - name: webkit2gtk-dependencies
+    buildsystem: simple
+    build-commands:
+      - true
+
+  - name: freequence
+    buildsystem: simple
+    build-commands:
+      # Build frontend assets
+      - npm --prefix ui ci --prefer-offline
+      - npm --prefix ui run build
+      # Build Rust binary in release mode
+      - cargo build --release --manifest-path src-tauri/Cargo.toml
+      # Install binary
+      - install -Dm755 src-tauri/target/release/freequence /app/bin/freequence
+      # Install desktop integration files
+      - install -Dm644 io.github.sinarahmany.Freequence.desktop /app/share/applications/io.github.sinarahmany.Freequence.desktop
+      - install -Dm644 io.github.sinarahmany.Freequence.metainfo.xml /app/share/metainfo/io.github.sinarahmany.Freequence.metainfo.xml
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.sinarahmany.Freequence.png
+      - install -Dm644 src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.sinarahmany.Freequence.png
+    sources:
+      - type: dir
+        path: .

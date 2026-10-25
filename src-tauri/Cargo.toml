@@ -1,0 +1,43 @@
+[package]
+name = "freequence"
+version = "0.1.0"
+description = "A modern self-hosted music player and desktop client"
+authors = ["Sina Rahmannejad"]
+license = "MIT"
+repository = "https://github.com/sinarahmany/Freequence"
+edition = "2024"
+rust-version = "1.90"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "freequence_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4" }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.12.5" }
+tauri-plugin-log = "2"
+tokio = { version = "1.54.1", features = ["full"] }
+axum = { version = "0.8.9", features = ["multipart"] }
+tower-http = { version = "0.7.1", features = ["cors", "fs", "trace"] }
+rusqlite = { version = "0.41.0", features = ["bundled", "chrono"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+uuid = { version = "1.29.0", features = ["v4", "v5", "serde"] }
+lofty = "0.25.4"
+notify = "8.2.1"
+bcrypt = "0.19.3"
+rand = "0.10.3"
+mime_guess = "2.0.5"
+walkdir = "2.5.0"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+sha1 = "0.11.0"
+tokio-util = { version = "0.7.20", features = ["io"] }
+dirs = "7.0.0"
+tower = { version = "0.5.3", features = ["util"] }
