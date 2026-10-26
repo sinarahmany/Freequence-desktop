@@ -43,7 +43,7 @@ modules:
       - npm --prefix ui ci --offline
       - npm --prefix ui run build
       # Build Rust binary in release mode using offline vendored crates
-      - cargo build --release --offline --manifest-path src-tauri/Cargo.toml
+      - cargo build --release --offline --ignore-rust-version --manifest-path src-tauri/Cargo.toml
       # Install binary
       - install -Dm755 src-tauri/target/release/freequence /app/bin/freequence
       # Install desktop integration files
